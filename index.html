@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculator</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: radial-gradient(circle at top, #1b1b2e, #0a0a12);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #fff;
+    }
+
+    .calculator {
+      background: #0f0f18;
+      padding: 20px;
+      border-radius: 18px;
+      width: 320px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .display {
+      width: 100%;
+      height: 60px;
+      background: linear-gradient(180deg, #000, #050505);
+      color: #39ff14;
+      font-size: 2rem;
+      text-align: right;
+      padding: 10px;
+      box-sizing: border-box;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      overflow-x: auto;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    button {
+      height: 60px;
+      font-size: 1.2rem;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      background: linear-gradient(180deg, #2e2e3a, #1c1c26);
+      color: #fff;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.6);
+    }
+
+    button:active { transform: translateY(1px); }
+
+    .operator { background: linear-gradient(180deg, #ffb347, #ff9500); color: #000; }
+    .equals { background: linear-gradient(180deg, #5cff9d, #34c759); color: #000; grid-column: span 2; }
+    .clear { background: linear-gradient(180deg, #ff6b6b, #ff3b30); color: #000; }
+
+    /* ===== SECRET VAULT ===== */
+    .viewer-overlay {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(0,0,0,0.9), rgba(0,0,0,0.98));
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      backdrop-filter: blur(8px);
+    }
+
+    .viewer {
+      width: 92vw;
+      height: 92vh;
+      background: #0b0b12;
+      border-radius: 20px;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.9);
+      overflow: hidden;
+    }
+
+    .viewer-sidebar {
+      background: linear-gradient(180deg, #111120, #0a0a14);
+      padding: 14px;
+      overflow-y: auto;
+      border-right: 1px solid #1f1f2e;
+    }
+
+    .viewer-sidebar::before {
+      content: "IMAGE VAULT";
+      display: block;
+      font-size: 0.75rem;
+      letter-spacing: 2px;
+      color: #39ff14;
+      margin-bottom: 12px;
+      opacity: 0.7;
+    }
+
+    .thumb {
+      width: 100%;
+      border-radius: 12px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      opacity: 0.75;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .thumb:hover {
+      opacity: 1;
+      transform: scale(1.02);
+    }
+
+    .viewer-main {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, #050509, #000);
+    }
+
+    .viewer-main img {
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 16px;
+      box-shadow: 0 20px 80px rgba(0,0,0,0.8);
+    }
+
+    .vault-hint {
+      position: absolute;
+      bottom: 16px;
+      right: 20px;
+      font-size: 0.75rem;
+      opacity: 0.3;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="calculator">
+  <div id="display" class="display">0</div>
+  <div class="buttons">
+    <button class="clear" onclick="clearDisplay()" id="vaultBtn">C</button>
+    <button onclick="deleteLast()">⌫</button>
+    <button onclick="append('.')">.</button>
+    <button class="operator" onclick="append('/')">÷</button>
+
+    <button onclick="append('7')">7</button>
+    <button onclick="append('8')">8</button>
+    <button onclick="append('9')">9</button>
+    <button class="operator" onclick="append('*')">×</button>
+
+    <button onclick="append('4')">4</button>
+    <button onclick="append('5')">5</button>
+    <button onclick="append('6')">6</button>
+    <button class="operator" onclick="append('-')">−</button>
+
+    <button onclick="append('1')">1</button>
+    <button onclick="append('2')">2</button>
+    <button onclick="append('3')">3</button>
+    <button class="operator" onclick="append('+')">+</button>
+
+    <button onclick="append('0')">0</button>
+    <button class="equals" onclick="calculate()">=</button>
+  </div>
+</div>
+
+<div id="viewerOverlay" class="viewer-overlay">
+  <div class="viewer">
+    <div class="viewer-sidebar" id="thumbs"></div>
+    <div class="viewer-main">
+      <img id="mainImage" ondblclick="toggleFullscreen()" />
+      <div class="vault-hint">Double‑click image = fullscreen • Press E = panic • Right‑click C = add images</div>
+    </div>
+  </div>
+</div>
+
+<input id="fileInput" type="file" accept="image/*" multiple hidden />
+
+<script>
+const display = document.getElementById('display');
+const vaultBtn = document.getElementById('vaultBtn');
+const fileInput = document.getElementById('fileInput');
+
+const secretCombo = ['9','1','1','=','2','0','0','1'];
+let inputBuffer = [];
+let vaultLocked = false;
+
+function recordInput(v) {
+  if(vaultLocked) return;
+  inputBuffer.push(v);
+  if(inputBuffer.length > secretCombo.length) inputBuffer.shift();
+  if(secretCombo.every((val,i)=>inputBuffer[i]===val)){
+    toggleViewer(true);
+    inputBuffer=[];
+  }
+}
+
+function append(value){
+  recordInput(value);
+  if(display.textContent==='0') display.textContent=value;
+  else display.textContent+=value;
+}
+
+function clearDisplay(){
+  recordInput('C');
+  display.textContent='0';
+}
+
+function deleteLast(){
+  recordInput('⌫');
+  display.textContent=display.textContent.length>1?display.textContent.slice(0,-1):'0';
+}
+
+function calculate(){
+  recordInput('=');
+  try{
+    if(/[^0-9.)]$/.test(display.textContent)) return;
+    display.textContent = Function('"use strict";return('+display.textContent+')')();
+  }catch{}
+}
+
+/* ===== IMAGE STORAGE ===== */
+let db;
+let images=[];
+let currentIndex=-1;
+const req=indexedDB.open('secret-image-db',1);
+req.onupgradeneeded=e=>{e.target.result.createObjectStore('images',{keyPath:'id',autoIncrement:true});};
+req.onsuccess=e=>{db=e.target.result; loadImages();};
+
+function loadImages(){
+  images=[];
+  const tx=db.transaction('images','readonly');
+  tx.objectStore('images').openCursor().onsuccess=e=>{
+    const c=e.target.result;
+    if(c){images.push(c.value);c.continue();}
+    else renderThumbs();
+  };
+}
+
+function renderThumbs(){
+  const thumbs=document.getElementById('thumbs');
+  thumbs.innerHTML='';
+  images.forEach((img,i)=>{
+    const t=document.createElement('img');
+    t.src=img.data;
+    t.className='thumb';
+    t.onclick=()=>showImage(i);
+    thumbs.appendChild(t);
+  });
+  if(images.length && currentIndex===-1) showImage(0);
+}
+
+function showImage(i){
+  currentIndex=i;
+  document.getElementById('mainImage').src=images[i].data;
+}
+
+function toggleViewer(state){
+  if(vaultLocked) return;
+  document.getElementById('viewerOverlay').style.display=state?'flex':'none';
+}
+
+/* ===== FULLSCREEN ===== */
+function toggleFullscreen(){
+  const img=document.getElementById('mainImage');
+  if(!document.fullscreenElement) img.requestFullscreen();
+  else document.exitFullscreen();
+}
+
+/* ===== ADD IMAGES VIA BUTTON ===== */
+vaultBtn.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  if(vaultLocked) return;
+  fileInput.click();
+});
+fileInput.addEventListener('change',e=>{
+  [...e.target.files].forEach(file=>{
+    const r=new FileReader();
+    r.onload=()=>{
+      const tx=db.transaction('images','readwrite');
+      tx.objectStore('images').add({data:r.result});
+      tx.oncomplete=loadImages;
+    };
+    r.readAsDataURL(file);
+  });
+  e.target.value='';
+});
+
+/* ===== PANIC BUTTON ===== */
+document.addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='e'){
+    vaultLocked=true;
+    document.getElementById('viewerOverlay').style.display='none';
+    display.textContent='0';
+  }
+});
+</script>
+</body>
+</html>
