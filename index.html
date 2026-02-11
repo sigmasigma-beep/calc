@@ -17,11 +17,12 @@
     }
 
     .calculator {
-      background: #0f0f18;
+      background: linear-gradient(145deg, #141427, #0d0d16);
       padding: 20px;
       border-radius: 18px;
       width: 320px;
       box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+      border: 1px solid #23233a;
     }
 
     .display {
@@ -102,6 +103,62 @@
       opacity: 0.7;
     }
 
+    .vault-controls {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(10, 10, 20, 0.7);
+      border: 1px solid #1f1f2e;
+    }
+
+    .vault-controls label {
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      color: #9bff79;
+      text-transform: uppercase;
+    }
+
+    .vault-controls input[type="range"] {
+      width: 100%;
+      accent-color: #63ff8d;
+    }
+
+    .vault-controls button {
+      height: 42px;
+      font-size: 0.85rem;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #32324a, #1b1b2a);
+    }
+
+    .vault-controls button.active {
+      background: linear-gradient(180deg, #5cff9d, #34c759);
+      color: #000;
+    }
+
+    .panic {
+      background: linear-gradient(180deg, #ff8a80, #ff3b30) !important;
+      color: #120000 !important;
+      font-weight: 700;
+    }
+
+    .tempo-readout {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      opacity: 0.8;
+      letter-spacing: 0.5px;
+    }
+
+    .viewer-status {
+      font-size: 0.75rem;
+      color: #8fffb0;
+      opacity: 0.8;
+      min-height: 1em;
+      letter-spacing: 0.4px;
+    }
+
     .thumb {
       width: 100%;
       border-radius: 12px;
@@ -129,6 +186,8 @@
       max-height: 90%;
       border-radius: 16px;
       box-shadow: 0 20px 80px rgba(0,0,0,0.8);
+      transform-origin: center;
+      transition: transform 0.1s ease-out;
     }
 
     .vault-hint {
@@ -173,7 +232,20 @@
 
 <div id="viewerOverlay" class="viewer-overlay">
   <div class="viewer">
-    <div class="viewer-sidebar" id="thumbs"></div>
+    <div class="viewer-sidebar">
+      <div class="vault-controls">
+        <label for="zoomRange">Zoom</label>
+        <div class="tempo-readout"><span>1x</span><strong id="zoomValue">1.00x</strong><span>3x</span></div>
+        <input id="zoomRange" type="range" min="1" max="3" step="0.05" value="1" />
+        <label for="tempoRange">Metronome speed</label>
+        <div class="tempo-readout"><span>60 BPM</span><strong id="tempoValue">90 BPM</strong><span>240 BPM</span></div>
+        <input id="tempoRange" type="range" min="60" max="240" step="5" value="90" />
+        <button id="metronomeBtn" type="button">Start metronome</button>
+        <button id="panicBtn" class="panic" type="button">Panic (E)</button>
+        <div id="metronomeStatus" class="viewer-status">Metronome is off.</div>
+      </div>
+      <div id="thumbs"></div>
+    </div>
     <div class="viewer-main">
       <img id="mainImage" ondblclick="toggleFullscreen()" />
       <div class="vault-hint">Double‑click image = fullscreen • Press E = panic • Right‑click C = add images</div>
@@ -187,13 +259,19 @@
 const display = document.getElementById('display');
 const vaultBtn = document.getElementById('vaultBtn');
 const fileInput = document.getElementById('fileInput');
+const zoomRange = document.getElementById('zoomRange');
+const tempoRange = document.getElementById('tempoRange');
+const metronomeBtn = document.getElementById('metronomeBtn');
+const panicBtn = document.getElementById('panicBtn');
+const metronomeStatus = document.getElementById('metronomeStatus');
+const tempoValue = document.getElementById('tempoValue');
+const zoomValue = document.getElementById('zoomValue');
+const mainImage = document.getElementById('mainImage');
 
 const secretCombo = ['9','1','1','=','2','0','0','1'];
 let inputBuffer = [];
-let vaultLocked = false;
 
 function recordInput(v) {
-  if(vaultLocked) return;
   inputBuffer.push(v);
   if(inputBuffer.length > secretCombo.length) inputBuffer.shift();
   if(secretCombo.every((val,i)=>inputBuffer[i]===val)){
@@ -259,25 +337,105 @@ function renderThumbs(){
 
 function showImage(i){
   currentIndex=i;
-  document.getElementById('mainImage').src=images[i].data;
+  mainImage.src=images[i].data;
+  applyZoom();
 }
 
 function toggleViewer(state){
-  if(vaultLocked) return;
   document.getElementById('viewerOverlay').style.display=state?'flex':'none';
+  if(!state) stopMetronome();
 }
 
 /* ===== FULLSCREEN ===== */
 function toggleFullscreen(){
-  const img=document.getElementById('mainImage');
-  if(!document.fullscreenElement) img.requestFullscreen();
+  if(!document.fullscreenElement) mainImage.requestFullscreen();
   else document.exitFullscreen();
 }
+
+/* ===== ZOOM CONTROL ===== */
+function applyZoom() {
+  const zoom = Number(zoomRange.value);
+  mainImage.style.transform = `scale(${zoom})`;
+  zoomValue.textContent = `${zoom.toFixed(2)}x`;
+}
+
+zoomRange.addEventListener('input', applyZoom);
+applyZoom();
+
+/* ===== METRONOME ===== */
+let audioContext;
+let metronomeTimer;
+let metronomeBpm = Number(tempoRange.value);
+let metronomeActive = false;
+
+function updateTempoLabel() {
+  tempoValue.textContent = `${tempoRange.value} BPM`;
+}
+
+function playBeep() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  const osc = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = 880;
+  gain.gain.value = 0.08;
+  osc.connect(gain).connect(audioContext.destination);
+  osc.start();
+  osc.stop(audioContext.currentTime + 0.08);
+}
+
+function scheduleNextBeep() {
+  if (!metronomeActive) return;
+  playBeep();
+  metronomeStatus.textContent = `Ticking at ${metronomeBpm} BPM`;
+  metronomeBpm = Math.min(metronomeBpm + 5, 240);
+  tempoRange.value = String(Math.min(Number(tempoRange.value) + 5, 240));
+  updateTempoLabel();
+  const intervalMs = 60000 / metronomeBpm;
+  metronomeTimer = setTimeout(scheduleNextBeep, intervalMs);
+}
+
+async function startMetronome() {
+  if (metronomeActive) return;
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  await audioContext.resume();
+  metronomeActive = true;
+  metronomeBtn.classList.add('active');
+  metronomeBtn.textContent = 'Stop metronome';
+  metronomeBpm = Number(tempoRange.value);
+  metronomeStatus.textContent = `Starting at ${metronomeBpm} BPM`;
+  scheduleNextBeep();
+}
+
+function stopMetronome() {
+  metronomeActive = false;
+  metronomeBtn.classList.remove('active');
+  metronomeBtn.textContent = 'Start metronome';
+  clearTimeout(metronomeTimer);
+  metronomeStatus.textContent = 'Metronome is off.';
+}
+
+metronomeBtn.addEventListener('click', () => {
+  if (metronomeActive) stopMetronome();
+  else startMetronome().catch(() => {
+    metronomeStatus.textContent = 'Audio blocked: interact with page and try again.';
+  });
+});
+
+tempoRange.addEventListener('input', () => {
+  metronomeBpm = Number(tempoRange.value);
+  updateTempoLabel();
+});
+
+updateTempoLabel();
 
 /* ===== ADD IMAGES VIA BUTTON ===== */
 vaultBtn.addEventListener('contextmenu',e=>{
   e.preventDefault();
-  if(vaultLocked) return;
   fileInput.click();
 });
 fileInput.addEventListener('change',e=>{
@@ -294,11 +452,17 @@ fileInput.addEventListener('change',e=>{
 });
 
 /* ===== PANIC BUTTON ===== */
-document.addEventListener('keydown',e=>{
-  if(e.key.toLowerCase()==='e'){
-    vaultLocked=true;
+function panicClose() {
     document.getElementById('viewerOverlay').style.display='none';
+    stopMetronome();
     display.textContent='0';
+}
+
+panicBtn.addEventListener('click', panicClose);
+
+window.addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='e' || e.key === 'Escape'){
+    panicClose();
   }
 });
 </script>
